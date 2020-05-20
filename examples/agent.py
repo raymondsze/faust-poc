@@ -33,13 +33,17 @@ async def adding_retry(stream):
 @app.agent(topic)
 async def adding(stream):
     async for event in stream.events():
-        # retry_count = (event.headers['Retry-Count'] if 'Retry-Count' in event.headers else 0) + 1
-        # event.headers['Retry-Count'] = bytes(retry_count)
-        # print(event.headers['Retry-Count'])
-        value = event.value
-        new_headers = event.headers.copy()
-        new_headers['Retry-Count'] = b'1'
-        await event.forward('adding_retry', headers=new_headers)
+        retry_count_header = event.headers.get('Retry-Count')
+        retry_count = 0 if retry_count_header is None else int(retry_count_header.decode('utf-8'))
+        if retry_count > 3:
+            await event.forward('adding_dlq', headers=new_headers)
+        try:
+            value = event.value
+            yield value
+        except:
+            new_headers = event.headers.copy()
+            new_headers['Retry-Count'] = bytes(str(1), 'utf-8')
+            await event.forward('adding_retry', headers=new_headers)
 
 from faust.cli import argument, option
 
